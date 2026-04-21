@@ -248,35 +248,85 @@ const InnAvatar: React.FC = () => (
   </div>
 );
 
+const SAVE_KEY = "fujikura_rpg_save";
+
+const loadSaveData = () => {
+  try {
+    const saved = localStorage.getItem(SAVE_KEY);
+    if (saved) {
+      const data = JSON.parse(saved);
+      const today = new Date().toDateString();
+      const isNewDay = data.lastDate !== today;
+      return {
+        gold: data.gold ?? 120,
+        exp: data.exp ?? 340,
+        level: data.level ?? 7,
+        hp: data.hp ?? 75,
+        mp: data.mp ?? 60,
+        // ถ้าขึ้นวันใหม่ จะรีเซ็ต task ที่เสร็จแล้วออกไป เพื่อให้กระดานโล่งขึ้นเวลาเล่นข้ามวัน
+        tasks: isNewDay
+          ? (data.tasks ?? []).filter((t: any) => !t.done)
+          : (data.tasks ?? []),
+        checkedIn: isNewDay ? false : (data.checkedIn ?? false),
+        otChoice: isNewDay ? "pending" : (data.otChoice ?? "pending"),
+        otRewarded: isNewDay ? false : (data.otRewarded ?? false),
+      };
+    }
+  } catch (e) {
+    console.error("Failed to load save", e);
+  }
+  return null;
+};
+
+const getHeroTitle = (level: number) => {
+  if (level < 5) return "INTERN NOVICE";
+  if (level < 15) return "CODE WARRIOR";
+  if (level < 30) return "SENIOR KNIGHT";
+  if (level < 50) return "TECH PALADIN";
+  return "FUJIKURA WIZARD";
+};
+
 // ======================================================
 // Component: Floating Reward Popup (แอนิเมชัน +Gold +EXP)
 // ======================================================
 interface FloatingRewardProps {
   show: boolean;
+  content?: { title: string; msgs: string[] };
 }
-const FloatingReward: React.FC<FloatingRewardProps> = ({ show }) => (
-  <AnimatePresence>
-    {show && (
-      <motion.div
-        key="reward"
-        initial={{ opacity: 1, y: 0, scale: 0.5 }}
-        animate={{ opacity: 1, y: -80, scale: 1.2 }}
-        exit={{ opacity: 0, y: -140, scale: 0.8 }}
-        transition={{ duration: 1.2, ease: "easeOut" }}
-        className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
-      >
-        <div
-          className="bg-yellow-400 text-black px-4 py-3 border-4 border-black text-center shadow-2xl"
-          style={{ fontFamily: "'Press Start 2P', cursive", fontSize: "10px" }}
+const FloatingReward: React.FC<FloatingRewardProps> = ({ show, content }) => {
+  const data = content || {
+    title: "✨ REWARD!!",
+    msgs: ["+50 GOLD", "+20 EXP"],
+  };
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          key="reward"
+          initial={{ opacity: 1, y: 0, scale: 0.5 }}
+          animate={{ opacity: 1, y: -80, scale: 1.2 }}
+          exit={{ opacity: 0, y: -140, scale: 0.8 }}
+          transition={{ duration: 1.2, ease: "easeOut" }}
+          className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
         >
-          <div className="text-green-800 text-sm mb-1">✨ REWARD!!</div>
-          <div>+50 GOLD</div>
-          <div>+20 EXP</div>
-        </div>
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
+          <div
+            className="bg-yellow-400 text-black px-4 py-3 border-4 border-black text-center shadow-2xl whitespace-nowrap"
+            style={{ fontFamily: "'Press Start 2P', cursive", fontSize: "9px" }}
+          >
+            <div className="text-green-900 border-b-2 border-green-800 pb-1 mb-2 text-[10px] leading-tight flex items-center justify-center gap-1">
+              {data.title}
+            </div>
+            {data.msgs.map((m, i) => (
+              <div key={i} className="mb-1 leading-tight text-black">
+                {m}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
 
 // ======================================================
 // Component: Level Up Banner (แบนเนอร์ Level Up!)
@@ -325,15 +375,22 @@ const Scanlines: React.FC = () => (
 // Main App Component
 // ======================================================
 const PixelRPGApp: React.FC = () => {
+  const initialData = loadSaveData();
+
   // ---- State ----
   const [time, setTime] = useState<Date>(new Date());
-  const [gold, setGold] = useState<number>(120);
-  const [exp, setExp] = useState<number>(340);
-  const [level, setLevel] = useState<number>(7);
-  const [hp, setHp] = useState<number>(75); // เปอร์เซ็นต์ HP (Energy)
-  const [mp, setMp] = useState<number>(60); // เปอร์เซ็นต์ MP (Focus)
-  const [checkedIn, setCheckedIn] = useState<boolean>(false); // Check-in แล้วหรือยัง
+  const [gold, setGold] = useState<number>(initialData?.gold ?? 120);
+  const [exp, setExp] = useState<number>(initialData?.exp ?? 340);
+  const [level, setLevel] = useState<number>(initialData?.level ?? 7);
+  const [hp, setHp] = useState<number>(initialData?.hp ?? 75); // เปอร์เซ็นต์ HP (Energy)
+  const [mp, setMp] = useState<number>(initialData?.mp ?? 60); // เปอร์เซ็นต์ MP (Focus)
+  const [checkedIn, setCheckedIn] = useState<boolean>(
+    initialData?.checkedIn ?? false,
+  ); // Check-in แล้วหรือยัง
   const [showReward, setShowReward] = useState<boolean>(false); // แสดง Popup รางวัล
+  const [rewardContent, setRewardContent] = useState<
+    { title: string; msgs: string[] } | undefined
+  >();
   const [showLevelUp, setShowLevelUp] = useState<boolean>(false); // แสดงแบนเนอร์ Level Up
   const [questPercent, setQuestPercent] = useState<number>(0);
   const [status, setStatus] = useState<GameStatus>("GRINDING");
@@ -343,39 +400,60 @@ const PixelRPGApp: React.FC = () => {
 
   // ---- OT State ----
   const [otChoice, setOtChoice] = useState<"pending" | "accepted" | "declined">(
-    "pending",
+    initialData?.otChoice ?? "pending",
   ); // สถานะการเลือก OT
-  const [otRewarded, setOtRewarded] = useState<boolean>(false); // รับรางวัล OT แล้วหรือยัง
+  const [otRewarded, setOtRewarded] = useState<boolean>(
+    initialData?.otRewarded ?? false,
+  ); // รับรางวัล OT แล้วหรือยัง
   const [showOtReward, setShowOtReward] = useState<boolean>(false); // แสดง Popup รางวัล OT
   const otRewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---- Task State ----
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: "t1",
-      name: "Review pull requests",
-      priority: "HIGH",
-      goldReward: 30,
-      expReward: 15,
-      done: false,
-      createdAt: new Date(),
-    },
-    {
-      id: "t2",
-      name: "Write daily report",
-      priority: "NORMAL",
-      goldReward: 20,
-      expReward: 10,
-      done: false,
-      createdAt: new Date(),
-    },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>(
+    initialData?.tasks ?? [
+      {
+        id: "t1",
+        name: "Review pull requests",
+        priority: "HIGH",
+        goldReward: 30,
+        expReward: 15,
+        done: false,
+        createdAt: new Date(),
+      },
+      {
+        id: "t2",
+        name: "Write daily report",
+        priority: "NORMAL",
+        goldReward: 20,
+        expReward: 10,
+        done: false,
+        createdAt: new Date(),
+      },
+    ],
+  );
   const [showTaskForm, setShowTaskForm] = useState<boolean>(false); // เปิด/ปิด Form สร้าง Task
   const [newTaskName, setNewTaskName] = useState<string>(""); // ชื่อ Task ใหม่
   const [newTaskPriority, setNewTaskPriority] =
     useState<TaskPriority>("NORMAL"); // Priority
   const [taskRewardPopup, setTaskRewardPopup] = useState<string | null>(null); // ID Task ที่เพิ่งสำเร็จ
   const taskRewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---- Save to LocalStorage ----
+  useEffect(() => {
+    const saveData = {
+      gold,
+      exp,
+      level,
+      hp,
+      mp,
+      tasks,
+      checkedIn,
+      otChoice,
+      otRewarded,
+      lastDate: new Date().toDateString(),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+  }, [gold, exp, level, hp, mp, tasks, checkedIn, otChoice, otRewarded]);
 
   // ---- อัพเดทนาฬิกาทุกวิ (ส่ง otChoice เข้าไปด้วย) ----
   useEffect(() => {
@@ -430,7 +508,7 @@ const PixelRPGApp: React.FC = () => {
 
   const cfg = statusConfig[status];
 
-  // ---- Daily Check-in Handler ----
+  // ---- Daily Check-in Handler (with Random Events) ----
   const handleCheckIn = () => {
     if (checkedIn) {
       // สั่น button ถ้ากดซ้ำ
@@ -440,9 +518,56 @@ const PixelRPGApp: React.FC = () => {
     }
 
     setCheckedIn(true);
-    setGold((g) => g + 50);
+
+    // Random Events Logic
+    const rand = Math.random();
+    let earnedGold = 50;
+    let earnedExp = 20;
+
+    // if (rand < 0.15) {
+    //   // 15% Bad Luck: แอร์เสีย
+    //   setHp((h) => Math.max(h - 15, 5));
+    //   setRewardContent({
+    //     title: "🥶 AC IS BROKEN!",
+    //     msgs: ["-15 HP (ENERGY)", `+${earnedGold} GOLD`, `+${earnedExp} EXP`]
+    //   });
+    // } else if (rand < 0.3) {
+    //   // 15% Good Luck: ชานมไข่มุกฟรี
+    //   setHp(100);
+    //   setMp(100);
+    //   setRewardContent({
+    //     title: "🧋 FREE BOBA TEA!",
+    //     msgs: ["+MAX HP/MP", `+${earnedGold} GOLD`, `+${earnedExp} EXP`]
+    //   });
+    // } else if (rand < 0.45) {
+    //   // 15% Boss attacks: มีงาน High Priority ด่วนเด้งเข้า
+    //   const bugTask: Task = {
+    //     id: `t-${Date.now()}`,
+    //     name: "🐛 URGENT: Fix prod bug!",
+    //     priority: "HIGH",
+    //     goldReward: 50,
+    //     expReward: 30,
+    //     done: false,
+    //     createdAt: new Date(),
+    //   };
+    //   setTasks((prev) => [bugTask, ...prev]);
+    //   setRewardContent({
+    //     title: "⚠ CRITICAL BUG!",
+    //     msgs: ["NEW HIGH TASK", `+${earnedGold} GOLD`, `+${earnedExp} EXP`]
+    //   });
+    // } else {
+    //   // 55% Normal Day
+    //   setHp((h) => Math.min(h + 10, 100));
+    //   setMp((m) => Math.min(m + 15, 100));
+    //   setRewardContent({
+    //     title: "✨ REWARD!!",
+    //     msgs: [`+${earnedGold} GOLD`, `+${earnedExp} EXP`, "HP/MP RECOVERED"]
+    //   });
+    // }
+
+    setGold((g) => g + earnedGold);
     setExp((e) => {
-      const newExp = e + 20;
+      const newExp = e + earnedExp;
       // ตรวจสอบ Level Up (ทุกๆ 100 EXP ต่อ level)
       if (Math.floor(newExp / 100) > Math.floor(e / 100)) {
         setLevel((lv) => lv + 1);
@@ -456,11 +581,7 @@ const PixelRPGApp: React.FC = () => {
     // แสดง Popup รางวัล
     setShowReward(true);
     if (rewardTimerRef.current) clearTimeout(rewardTimerRef.current);
-    rewardTimerRef.current = setTimeout(() => setShowReward(false), 1800);
-
-    // Restore HP และ MP นิดหน่อย
-    setHp((h) => Math.min(h + 10, 100));
-    setMp((m) => Math.min(m + 15, 100));
+    rewardTimerRef.current = setTimeout(() => setShowReward(false), 2400);
   };
 
   // ======================================================
@@ -517,6 +638,7 @@ const PixelRPGApp: React.FC = () => {
     setOtRewarded(false);
     setShowOtReward(false);
     setTasks([]);
+    localStorage.removeItem(SAVE_KEY);
   };
 
   // ======================================================
@@ -744,9 +866,14 @@ const PixelRPGApp: React.FC = () => {
                 <span className="text-purple-300 text-[10px]">{exp} EXP</span>
               </div>
               {/* Level */}
-              <div className="flex items-center gap-2 bg-black border-2 border-green-600 px-3 py-2">
-                <TrendingUp className="w-3 h-3 text-green-400" />
-                <span className="text-green-400 text-[10px]">LV.{level}</span>
+              <div className="flex items-center justify-between bg-black border-2 border-green-600 px-3 py-2 flex-grow md:flex-grow-0">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-3 h-3 text-green-400" />
+                  <span className="text-green-400 text-[10px]">LV.{level}</span>
+                </div>
+                <span className="text-yellow-500 text-[8px] bg-slate-900 border border-slate-700 px-2 py-1 ml-2 whitespace-nowrap">
+                  {getHeroTitle(level)}
+                </span>
               </div>
             </div>
 
@@ -1335,7 +1462,7 @@ const PixelRPGApp: React.FC = () => {
                 </span>
 
                 {/* Floating Reward Popup */}
-                <FloatingReward show={showReward} />
+                <FloatingReward show={showReward} content={rewardContent} />
               </motion.button>
             </div>
           </div>
