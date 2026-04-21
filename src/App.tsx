@@ -671,7 +671,7 @@ const PixelRPGApp: React.FC = () => {
         {/* Logo แถบบน */}
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="text-[8px] text-amber-900 tracking-widest">
-            NINTEGA™ CORP.
+            Fujikura Work Life Balance RPG
           </div>
           <div className="flex gap-1">
             {["bg-red-400", "bg-yellow-400", "bg-green-400"].map((c, i) => (
@@ -1308,7 +1308,7 @@ const PixelRPGApp: React.FC = () => {
             </div>
 
             {/* ---- Check-in Button อยู่ตรงนี้ ---- */}
-            <div className="relative z-20">
+            <div className="relative z-40">
               <motion.button
                 id="daily-checkin-btn"
                 onClick={handleCheckIn}
@@ -1319,7 +1319,7 @@ const PixelRPGApp: React.FC = () => {
                 whileTap={!checkedIn ? { scale: 0.97, y: 4 } : {}}
                 className={`
                   w-full py-4 text-[10px] md:text-xs border-4 border-black
-                  transition-all relative overflow-hidden
+                  transition-all relative
                   ${
                     checkedIn
                       ? "bg-slate-700 text-slate-500 cursor-not-allowed border-b-[6px]"
