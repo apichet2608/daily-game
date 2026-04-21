@@ -1,75 +1,27 @@
-# React + TypeScript + Vite
+เรียบร้อยครับ! ผมได้ทำการเพิ่มระบบ **OT Choice** และปุ่ม **RESET** ให้ตามที่ต้องการแล้วครับ 🎮
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+นี่คือรายละเอียดสิ่งผมที่อัปเดตเข้าไปในแอปครับ:
 
-Currently, two official plugins are available:
+### 1. ระบบเลือกทำ OT (Overtime Choice)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- เมื่อถึงเวลา **16:45** (หรือถ้าลองปรับเวลาทดสอบดู) จะมีแถบ **⚠ OVERTIME RAID INCOMING!** ปรากฏขึ้นมาให้เลือกว่าจะทำ OT หรือไม่
+- **ถ้ากด ACCEPT OT (ทำ OT):**
+  - จะได้รับ **+150 Gold** และ **+50 EXP** ทันที (พร้อมมี Popup เด้งโชว์โบนัส)
+  - ต้องแลกมาด้วยการเสีย **-15 HP (Energy)** เพราะทำงานหนักขึ้น
+  - สถานะจะกลายเป็นกำลังสู้บอส (OT RAID IN PROGRESS...)
+- **ถ้ากด GO HOME (ไม่ทำ OT):**
+  - ตัวละครจะหนีกลับบ้านไปพักผ่อนทันที (ข้ามบอสไปเป็นสถานะ AT THE INN)
+  - จะได้รับ **+20 HP** และ **+20 MP** คืนมาเพราะได้พักผ่อนเร็วขึ้น
 
-## React Compiler
+### 2. ปุ่ม RESET ข้อมูล
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+- เพิ่มปุ่ม **RESET** (สีส้ม) ไว้ที่แผงปุ่มควบคุมด้านล่าง (Physical Buttons Area)
+- เมื่อกดแล้วจะมีหน้าต่าง Confirm ยืนยันเพื่อป้องกันการเผลอกด
+- ถ้ายืนยัน ระบบจะรีเซ็ต:
+  - **Level กลับเป็น 1**
+  - **Gold กลับเป็น 0**
+  - **EXP กลับเป็น 0**
+  - **HP/MP เต็ม 100**
+  - เคลียร์ Task งานทั้งหมด และรีเซ็ตสถานะ Check-in/OT กลับเป็นค่าเริ่มต้น
 
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+ลองเปิดเล่นบนเบราว์เซอร์ดูนะครับ (ตอนถึงเวลา 16:45 จะเห็น UI เลือก OT ขึ้นมาโชว์ครับ!) หากต้องการให้ส่วนไหนขยับหรือปรับจำนวนเงิน/EXP แจ้งได้เลยครับ
