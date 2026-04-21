@@ -13,12 +13,33 @@ import {
   Flame,
   Moon,
   ChevronRight,
+  Plus,
+  Check,
+  Trash2,
+  ListChecks,
+  X,
+  RotateCcw,
 } from "lucide-react";
 
 // ======================================================
 // ประเภทข้อมูลสถานะของเกม
 // ======================================================
 type GameStatus = "GRINDING" | "BOSS_BATTLE" | "AT_THE_INN";
+
+// ======================================================
+// ประเภทข้อมูล Task งาน
+// ======================================================
+type TaskPriority = "LOW" | "NORMAL" | "HIGH";
+
+interface Task {
+  id: string;
+  name: string; // ชื่อ Task
+  priority: TaskPriority;
+  goldReward: number; // รางวัล Gold เมื่อทำสำเร็จ
+  expReward: number; // รางวัล EXP เมื่อทำสำเร็จ
+  done: boolean; // สถานะสำเร็จ
+  createdAt: Date;
+}
 
 interface StatusConfig {
   label: string;
@@ -33,7 +54,11 @@ interface StatusConfig {
 // ======================================================
 // ฟังก์ชันคำนวณ % ความคืบหน้าใน Quest ปัจจุบัน
 // ======================================================
-function getQuestProgress(now: Date): { status: GameStatus; percent: number } {
+// isOT: ถ้า false จะไม่นับ BOSS_BATTLE แม้จะเป็นเวลา OT
+function getQuestProgress(
+  now: Date,
+  isOT: boolean,
+): { status: GameStatus; percent: number } {
   const h = now.getHours();
   const m = now.getMinutes();
   const totalMinutes = h * 60 + m;
@@ -51,8 +76,8 @@ function getQuestProgress(now: Date): { status: GameStatus; percent: number } {
       status: "GRINDING",
       percent: Math.min((elapsed / duration) * 100, 100),
     };
-  } else if (totalMinutes >= otStart && totalMinutes < otEnd) {
-    // Overtime Boss Battle
+  } else if (totalMinutes >= otStart && totalMinutes < otEnd && isOT) {
+    // Overtime Boss Battle (เฉพาะเมื่อเลือกทำ OT)
     const elapsed = totalMinutes - otStart;
     const duration = otEnd - otStart;
     return {
@@ -60,7 +85,7 @@ function getQuestProgress(now: Date): { status: GameStatus; percent: number } {
       percent: Math.min((elapsed / duration) * 100, 100),
     };
   } else {
-    // พักที่ Inn
+    // พักที่ Inn (รวมเวลา OT ที่ไม่ยอมทำ)
     let elapsed: number;
     const duration = 24 * 60 - otEnd + mainStart; // เวลาทั้งหมดของ resting phase
     if (totalMinutes >= otEnd) {
@@ -316,23 +341,61 @@ const PixelRPGApp: React.FC = () => {
   const rewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const levelUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ---- อัพเดทนาฬิกาทุกวิ ----
+  // ---- OT State ----
+  const [otChoice, setOtChoice] = useState<"pending" | "accepted" | "declined">(
+    "pending",
+  ); // สถานะการเลือก OT
+  const [otRewarded, setOtRewarded] = useState<boolean>(false); // รับรางวัล OT แล้วหรือยัง
+  const [showOtReward, setShowOtReward] = useState<boolean>(false); // แสดง Popup รางวัล OT
+  const otRewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---- Task State ----
+  const [tasks, setTasks] = useState<Task[]>([
+    {
+      id: "t1",
+      name: "Review pull requests",
+      priority: "HIGH",
+      goldReward: 30,
+      expReward: 15,
+      done: false,
+      createdAt: new Date(),
+    },
+    {
+      id: "t2",
+      name: "Write daily report",
+      priority: "NORMAL",
+      goldReward: 20,
+      expReward: 10,
+      done: false,
+      createdAt: new Date(),
+    },
+  ]);
+  const [showTaskForm, setShowTaskForm] = useState<boolean>(false); // เปิด/ปิด Form สร้าง Task
+  const [newTaskName, setNewTaskName] = useState<string>(""); // ชื่อ Task ใหม่
+  const [newTaskPriority, setNewTaskPriority] =
+    useState<TaskPriority>("NORMAL"); // Priority
+  const [taskRewardPopup, setTaskRewardPopup] = useState<string | null>(null); // ID Task ที่เพิ่งสำเร็จ
+  const taskRewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---- อัพเดทนาฬิกาทุกวิ (ส่ง otChoice เข้าไปด้วย) ----
   useEffect(() => {
+    const isOT = otChoice === "accepted";
     const timer = setInterval(() => {
       const now = new Date();
       setTime(now);
-      const { status: s, percent: p } = getQuestProgress(now);
+      const { status: s, percent: p } = getQuestProgress(now, isOT);
       setStatus(s);
       setQuestPercent(p);
     }, 1000);
 
     // คำนวณค่าเริ่มต้นทันที
-    const { status: s, percent: p } = getQuestProgress(new Date());
+    const { status: s, percent: p } = getQuestProgress(new Date(), isOT);
     setStatus(s);
     setQuestPercent(p);
 
     return () => clearInterval(timer);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otChoice]);
 
   // ---- Config ตามสถานะ ----
   const statusConfig: Record<GameStatus, StatusConfig> = {
@@ -398,6 +461,155 @@ const PixelRPGApp: React.FC = () => {
     // Restore HP และ MP นิดหน่อย
     setHp((h) => Math.min(h + 10, 100));
     setMp((m) => Math.min(m + 15, 100));
+  };
+
+  // ======================================================
+  // OT Handlers
+  // ======================================================
+
+  // ---- ยอมรับทำ OT ----
+  const handleAcceptOT = () => {
+    setOtChoice("accepted");
+    // รับ Gold + EXP ทันทีที่กดรับ OT
+    if (!otRewarded) {
+      setOtRewarded(true);
+      setGold((g) => g + 150);
+      setExp((e) => {
+        const newExp = e + 50;
+        if (Math.floor(newExp / 100) > Math.floor(e / 100)) {
+          setLevel((lv) => lv + 1);
+          setShowLevelUp(true);
+          if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
+          levelUpTimerRef.current = setTimeout(
+            () => setShowLevelUp(false),
+            3000,
+          );
+        }
+        return newExp;
+      });
+      setShowOtReward(true);
+      if (otRewardTimerRef.current) clearTimeout(otRewardTimerRef.current);
+      otRewardTimerRef.current = setTimeout(() => setShowOtReward(false), 2000);
+    }
+    // HP ลดลงเพราะเหนื่อย
+    setHp((h) => Math.max(h - 15, 5));
+  };
+
+  // ---- ปฏิเสธ OT ----
+  const handleDeclineOT = () => {
+    setOtChoice("declined");
+    // HP กลับมา เพราะได้พักเร็ว
+    setHp((h) => Math.min(h + 20, 100));
+    setMp((m) => Math.min(m + 20, 100));
+  };
+
+  // ======================================================
+  // Reset Handler (รีเซ็ต Level, Gold, EXP)
+  // ======================================================
+  const handleReset = () => {
+    setGold(0);
+    setExp(0);
+    setLevel(1);
+    setHp(100);
+    setMp(100);
+    setCheckedIn(false);
+    setOtChoice("pending");
+    setOtRewarded(false);
+    setShowOtReward(false);
+    setTasks([]);
+  };
+
+  // ======================================================
+  // Task Handlers
+  // ======================================================
+
+  // ---- สร้าง Task ใหม่ ----
+  const handleAddTask = () => {
+    const name = newTaskName.trim();
+    if (!name) return;
+
+    // กำหนดรางวัลตาม Priority
+    const rewardMap: Record<TaskPriority, { gold: number; exp: number }> = {
+      LOW: { gold: 10, exp: 5 },
+      NORMAL: { gold: 20, exp: 10 },
+      HIGH: { gold: 35, exp: 20 },
+    };
+    const reward = rewardMap[newTaskPriority];
+
+    const newTask: Task = {
+      id: `t-${Date.now()}`,
+      name,
+      priority: newTaskPriority,
+      goldReward: reward.gold,
+      expReward: reward.exp,
+      done: false,
+      createdAt: new Date(),
+    };
+
+    setTasks((prev) => [newTask, ...prev]);
+    setNewTaskName("");
+    setNewTaskPriority("NORMAL");
+    setShowTaskForm(false);
+  };
+
+  // ---- ทำ Task สำเร็จ (รับ Gold + EXP) ----
+  const handleCompleteTask = (taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id !== taskId || t.done) return t;
+        // ให้รางวัล
+        setGold((g) => g + t.goldReward);
+        setExp((e) => {
+          const newExp = e + t.expReward;
+          if (Math.floor(newExp / 100) > Math.floor(e / 100)) {
+            setLevel((lv) => lv + 1);
+            setShowLevelUp(true);
+            if (levelUpTimerRef.current) clearTimeout(levelUpTimerRef.current);
+            levelUpTimerRef.current = setTimeout(
+              () => setShowLevelUp(false),
+              3000,
+            );
+          }
+          return newExp;
+        });
+        // แสดง Reward popup สั้นๆ
+        setTaskRewardPopup(taskId);
+        if (taskRewardTimerRef.current)
+          clearTimeout(taskRewardTimerRef.current);
+        taskRewardTimerRef.current = setTimeout(
+          () => setTaskRewardPopup(null),
+          1500,
+        );
+        return { ...t, done: true };
+      }),
+    );
+  };
+
+  // ---- ลบ Task ----
+  const handleDeleteTask = (taskId: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+  };
+
+  // ---- สีตาม Priority ----
+  const priorityStyle: Record<
+    TaskPriority,
+    { border: string; badge: string; label: string }
+  > = {
+    HIGH: {
+      border: "border-red-600",
+      badge: "bg-red-600 text-white",
+      label: "HIGH",
+    },
+    NORMAL: {
+      border: "border-yellow-600",
+      badge: "bg-yellow-600 text-black",
+      label: "NORMAL",
+    },
+    LOW: {
+      border: "border-slate-600",
+      badge: "bg-slate-600 text-white",
+      label: "LOW",
+    },
   };
 
   // ---- Bar สีตามค่า HP ----
@@ -680,23 +892,29 @@ const PixelRPGApp: React.FC = () => {
                 <div className="flex gap-2">
                   <span
                     className={
-                      status === "BOSS_BATTLE"
-                        ? "text-orange-400"
-                        : status === "AT_THE_INN"
-                          ? "text-green-500"
+                      otChoice === "accepted"
+                        ? status === "BOSS_BATTLE"
+                          ? "text-orange-400"
+                          : "text-green-500"
+                        : otChoice === "declined"
+                          ? "text-slate-500"
                           : "text-slate-600"
                     }
                   >
-                    {status === "AT_THE_INN"
-                      ? "✓"
-                      : status === "BOSS_BATTLE"
+                    {otChoice === "accepted"
+                      ? status === "BOSS_BATTLE"
                         ? "▶"
+                        : "✓"
+                      : otChoice === "declined"
+                        ? "✗"
                         : "○"}
                   </span>
                   <span
                     className={status === "GRINDING" ? "text-slate-600" : ""}
                   >
-                    16:45 – Overtime raid begins (BOSS EVENT)
+                    16:45 – Overtime raid
+                    {otChoice === "accepted" && " (ACCEPTED ✓)"}
+                    {otChoice === "declined" && " (DECLINED ✗)"}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -716,6 +934,377 @@ const PixelRPGApp: React.FC = () => {
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* ======================================================
+                OT CHOICE PANEL – ให้เลือกว่าจะทำ OT หรือไม่
+                แสดงเฉพาะช่วง 16:45–20:00
+            ====================================================== */}
+            <AnimatePresence>
+              {(status === "BOSS_BATTLE" ||
+                (otChoice === "pending" &&
+                  (() => {
+                    const h = time.getHours();
+                    const m = time.getMinutes();
+                    const t = h * 60 + m;
+                    return t >= 16 * 60 + 45 && t < 20 * 60;
+                  })())) && (
+                <motion.div
+                  key="ot-panel"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  className="relative z-20 mb-4"
+                >
+                  {otChoice === "pending" ? (
+                    /* ---- ยังไม่เลือก: แสดงคำถาม OT ---- */
+                    <div className="border-4 border-orange-500 bg-orange-950/60 p-4">
+                      <div className="flex items-center gap-2 text-orange-400 text-[9px] mb-3">
+                        <Flame className="w-4 h-4" />
+                        <motion.span
+                          animate={{ opacity: [1, 0.5, 1] }}
+                          transition={{ duration: 1, repeat: Infinity }}
+                        >
+                          ⚠ OVERTIME RAID INCOMING!
+                        </motion.span>
+                      </div>
+                      <div className="text-slate-300 text-[8px] mb-1">
+                        THE BOSS AWAKENS AT 16:45...
+                      </div>
+                      <div className="text-slate-400 text-[8px] mb-4">
+                        Will you join the OVERTIME RAID?
+                      </div>
+                      <div className="bg-black border border-orange-800 p-2 mb-4 text-[8px]">
+                        <div className="text-orange-300 mb-1">
+                          RAID REWARDS:
+                        </div>
+                        <div className="text-yellow-400">+150 GOLD +50 EXP</div>
+                        <div className="text-red-400 mt-1">
+                          COST: -15 HP (ENERGY)
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <motion.button
+                          id="accept-ot-btn"
+                          whileTap={{ scale: 0.96, y: 3 }}
+                          onClick={handleAcceptOT}
+                          className="flex-1 bg-orange-600 text-white py-3 border-4 border-black border-b-[6px] border-orange-900 text-[9px] cursor-pointer hover:bg-orange-500 transition-colors shadow-[0_0_15px_rgba(234,88,12,0.5)]"
+                        >
+                          ⚔ ACCEPT OT
+                        </motion.button>
+                        <motion.button
+                          id="decline-ot-btn"
+                          whileTap={{ scale: 0.96, y: 3 }}
+                          onClick={handleDeclineOT}
+                          className="flex-1 bg-slate-700 text-slate-300 py-3 border-4 border-black border-b-[6px] border-slate-900 text-[9px] cursor-pointer hover:bg-slate-600 transition-colors"
+                        >
+                          🛡 GO HOME
+                        </motion.button>
+                      </div>
+                    </div>
+                  ) : otChoice === "accepted" ? (
+                    /* ---- เลือก OT แล้ว: แสดงสถานะกำลังทำ OT ---- */
+                    <div className="relative border-4 border-orange-600 bg-orange-950/40 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-orange-400 text-[9px]">
+                          <motion.div
+                            animate={{ rotate: [0, 10, -10, 0] }}
+                            transition={{
+                              duration: 0.5,
+                              repeat: Infinity,
+                              repeatDelay: 1,
+                            }}
+                          >
+                            <Flame className="w-4 h-4" />
+                          </motion.div>
+                          <span>OT RAID IN PROGRESS...</span>
+                        </div>
+                        <div className="text-[8px]">
+                          <span className="text-yellow-500">+150G</span>
+                          <span className="text-slate-500"> CLAIMED</span>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[7px] text-slate-500">
+                        Hang in there, adventurer! Quest ends at 20:00
+                      </div>
+                      {/* OT Reward Popup */}
+                      <AnimatePresence>
+                        {showOtReward && (
+                          <motion.div
+                            key="ot-reward"
+                            initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, y: -50, scale: 1.1 }}
+                            exit={{ opacity: 0, y: -90 }}
+                            transition={{ duration: 1.5 }}
+                            className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+                          >
+                            <div
+                              className="bg-orange-400 text-black px-4 py-3 border-4 border-black text-center"
+                              style={{
+                                fontFamily: "'Press Start 2P', cursive",
+                                fontSize: "10px",
+                              }}
+                            >
+                              <div className="text-sm mb-1">🔥 OT BONUS!</div>
+                              <div>+150 GOLD</div>
+                              <div>+50 EXP</div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ) : null}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ======================================================
+                TASK PANEL – สร้างและจัดการ Task งาน
+            ====================================================== */}
+            <div className="relative z-20 bg-black border-2 border-cyan-900 p-3 mb-4">
+              {/* Header แถบ Task */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-cyan-400 text-[9px]">
+                  <ListChecks className="w-3 h-3" />
+                  <span>TASK BOARD</span>
+                  <span className="bg-cyan-900 text-cyan-300 px-2 py-0 border border-cyan-700 text-[8px]">
+                    {tasks.filter((t) => !t.done).length}/{tasks.length}
+                  </span>
+                </div>
+                {/* ปุ่ม + NEW TASK */}
+                <motion.button
+                  id="new-task-btn"
+                  whileTap={{ scale: 0.95, y: 2 }}
+                  onClick={() => setShowTaskForm((v) => !v)}
+                  className="flex items-center gap-1 bg-cyan-700 text-white px-2 py-1 border-2 border-black border-b-[4px] border-cyan-900 text-[8px] cursor-pointer hover:bg-cyan-600 transition-colors"
+                >
+                  {showTaskForm ? (
+                    <X className="w-3 h-3" />
+                  ) : (
+                    <Plus className="w-3 h-3" />
+                  )}
+                  {showTaskForm ? "CANCEL" : "+ NEW"}
+                </motion.button>
+              </div>
+
+              {/* ---- Form สร้าง Task ---- */}
+              <AnimatePresence>
+                {showTaskForm && (
+                  <motion.div
+                    key="task-form"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="bg-slate-900 border-2 border-cyan-800 p-3 mb-3 space-y-3">
+                      {/* Task Name Input */}
+                      <div>
+                        <div className="text-[8px] text-slate-400 mb-1">
+                          TASK NAME:
+                        </div>
+                        <input
+                          id="task-name-input"
+                          type="text"
+                          value={newTaskName}
+                          onChange={(e) => setNewTaskName(e.target.value)}
+                          onKeyDown={(e) =>
+                            e.key === "Enter" && handleAddTask()
+                          }
+                          maxLength={50}
+                          placeholder="Enter task name..."
+                          className="w-full bg-black text-white border-2 border-slate-600 px-2 py-2 text-[9px] focus:outline-none focus:border-cyan-500 placeholder:text-slate-600"
+                          style={{ fontFamily: "'Press Start 2P', cursive" }}
+                        />
+                      </div>
+
+                      {/* Priority Selector */}
+                      <div>
+                        <div className="text-[8px] text-slate-400 mb-2">
+                          PRIORITY:
+                        </div>
+                        <div className="flex gap-2">
+                          {(["LOW", "NORMAL", "HIGH"] as TaskPriority[]).map(
+                            (p) => (
+                              <button
+                                key={p}
+                                onClick={() => setNewTaskPriority(p)}
+                                className={`flex-1 py-1 border-2 border-black border-b-[4px] text-[8px] cursor-pointer transition-all
+                                ${
+                                  newTaskPriority === p
+                                    ? p === "HIGH"
+                                      ? "bg-red-600 text-white border-red-900"
+                                      : p === "NORMAL"
+                                        ? "bg-yellow-500 text-black border-yellow-800"
+                                        : "bg-slate-500 text-white border-slate-800"
+                                    : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                                }
+                              `}
+                              >
+                                {p}
+                              </button>
+                            ),
+                          )}
+                        </div>
+                        <div className="text-[7px] text-slate-600 mt-1">
+                          {newTaskPriority === "HIGH" &&
+                            "REWARD: +35G / +20EXP"}
+                          {newTaskPriority === "NORMAL" &&
+                            "REWARD: +20G / +10EXP"}
+                          {newTaskPriority === "LOW" && "REWARD: +10G / +5EXP"}
+                        </div>
+                      </div>
+
+                      {/* Submit Button */}
+                      <motion.button
+                        id="submit-task-btn"
+                        whileTap={{ scale: 0.97, y: 2 }}
+                        onClick={handleAddTask}
+                        disabled={!newTaskName.trim()}
+                        className={`w-full py-2 border-4 border-black border-b-[6px] text-[9px] transition-all cursor-pointer
+                          ${
+                            newTaskName.trim()
+                              ? "bg-cyan-600 text-white border-cyan-900 hover:bg-cyan-500"
+                              : "bg-slate-700 text-slate-500 cursor-not-allowed"
+                          }
+                        `}
+                      >
+                        ⚔ CREATE TASK
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ---- Task List ---- */}
+              <div className="space-y-2">
+                <AnimatePresence initial={false}>
+                  {tasks.length === 0 && (
+                    <div className="text-[8px] text-slate-600 text-center py-4">
+                      NO TASKS YET. CREATE ONE!
+                    </div>
+                  )}
+                  {tasks.map((task) => (
+                    <motion.div
+                      key={task.id}
+                      layout
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20, height: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className={`relative border-2 ${
+                        task.done
+                          ? "border-slate-700 bg-slate-900/50 opacity-60"
+                          : priorityStyle[task.priority].border +
+                            " bg-slate-900"
+                      } p-2 flex items-center gap-2`}
+                    >
+                      {/* Complete Button */}
+                      <motion.button
+                        whileTap={!task.done ? { scale: 0.9 } : {}}
+                        onClick={() => handleCompleteTask(task.id)}
+                        disabled={task.done}
+                        className={`shrink-0 w-6 h-6 border-2 flex items-center justify-center cursor-pointer transition-colors
+                          ${
+                            task.done
+                              ? "border-green-700 bg-green-900"
+                              : "border-slate-600 bg-black hover:border-green-500"
+                          }
+                        `}
+                      >
+                        {task.done && (
+                          <Check className="w-3 h-3 text-green-400" />
+                        )}
+                      </motion.button>
+
+                      {/* Task Info */}
+                      <div className="flex-1 min-w-0">
+                        <div
+                          className={`text-[8px] leading-tight ${
+                            task.done
+                              ? "line-through text-slate-600"
+                              : "text-white"
+                          }`}
+                        >
+                          {task.name}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          {/* Priority Badge */}
+                          <span
+                            className={`text-[7px] px-1 py-0 ${
+                              task.done
+                                ? "bg-slate-700 text-slate-500"
+                                : priorityStyle[task.priority].badge
+                            }`}
+                          >
+                            {task.priority}
+                          </span>
+                          {/* Reward */}
+                          <span className="text-[7px] text-yellow-600">
+                            +{task.goldReward}G
+                          </span>
+                          <span className="text-[7px] text-purple-600">
+                            +{task.expReward}EXP
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Task Reward Popup */}
+                      <AnimatePresence>
+                        {taskRewardPopup === task.id && (
+                          <motion.div
+                            key="task-reward"
+                            initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, y: -30, scale: 1 }}
+                            exit={{ opacity: 0, y: -60 }}
+                            transition={{ duration: 0.8 }}
+                            className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+                          >
+                            <div
+                              className="bg-yellow-400 text-black text-[8px] px-3 py-1 border-2 border-black"
+                              style={{
+                                fontFamily: "'Press Start 2P', cursive",
+                              }}
+                            >
+                              +{task.goldReward}G +{task.expReward}EXP ✓
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Delete Button */}
+                      <motion.button
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="shrink-0 w-6 h-6 border-2 border-red-900 bg-black flex items-center justify-center cursor-pointer hover:bg-red-950 hover:border-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-600" />
+                      </motion.button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              {/* Task Summary Footer */}
+              {tasks.length > 0 && (
+                <div className="mt-3 pt-2 border-t border-slate-800 flex justify-between text-[7px] text-slate-600">
+                  <span>DONE: {tasks.filter((t) => t.done).length}</span>
+                  <span>
+                    PENDING EXP: +
+                    {tasks
+                      .filter((t) => !t.done)
+                      .reduce((s, t) => s + t.expReward, 0)}
+                  </span>
+                  <span>
+                    PENDING GOLD: +
+                    {tasks
+                      .filter((t) => !t.done)
+                      .reduce((s, t) => s + t.goldReward, 0)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* ---- Check-in Button อยู่ตรงนี้ ---- */}
@@ -794,6 +1383,25 @@ const PixelRPGApp: React.FC = () => {
             REST
             <br />
             (+HP)
+          </motion.button>
+
+          {/* ปุ่ม RESET – รีเซ็ต Gold, EXP, Level */}
+          <motion.button
+            id="reset-btn"
+            whileTap={{ scale: 0.96, y: 4 }}
+            onClick={() => {
+              if (
+                confirm(
+                  "⚠ RESET SAVE DATA?\n\nGold, EXP, Level จะถูกรีเซ็ตทั้งหมด!\n\nยืนยันหรือไม่?",
+                )
+              ) {
+                handleReset();
+              }
+            }}
+            className="flex-1 bg-[#f59e0b] text-black py-3 border-4 border-black border-b-[6px] border-r-[4px] border-[#92400e] transition-all text-[8px] md:text-[10px] hover:bg-[#fbbf24] cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+          >
+            <RotateCcw className="w-3 h-3 mx-auto mb-1" />
+            RESET
           </motion.button>
 
           <motion.button
